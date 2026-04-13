@@ -48,7 +48,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     private static final String GITHUB_REPO = "https://github.com/1968210376/txt-novel-reader";
     private static final String VERSION_URL = GITHUB_REPO + "/raw/main/version.json";
-    private static final String APK_URL = GITHUB_REPO + "/releases/latest/download/app-release-unsigned.apk";
+    private static final String APK_URL = GITHUB_REPO + "/releases/latest/download/app-release.apk";
     private static final int CURRENT_VERSION = 1;
 
     private TextToSpeech tts;
