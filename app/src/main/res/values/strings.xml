@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">小说朗读器</string>
+    <string name="select_chapter">选择章节</string>
+    <string name="play">播放</string>
+    <string name="pause">暂停</string>
+    <string name="prev">上一章</string>
+    <string name="next">下一章</string>
+    <string name="update">检查更新</string>
+    <string name="speed">语速</string>
+    <string name="checking_update">正在检查更新...</string>
+    <string name="no_update">已是最新版本</string>
+    <string name="downloading">正在下载更新...</string>
+    <string name="update_success">下载完成，正在安装</string>
+    <string name="update_error">更新失败: %s</string>
+    <string name="new_version">发现新版本 %s，是否更新?</string>
+</resources>
