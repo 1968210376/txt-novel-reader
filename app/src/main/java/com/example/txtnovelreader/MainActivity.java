@@ -52,7 +52,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final String GITHUB_REPO = "https://github.com/1968210376/txt-novel-reader";
     private static final String VERSION_URL = GITHUB_REPO + "/raw/main/version.json";
     private static final String APK_URL = GITHUB_REPO + "/releases/latest/download/app-release.apk";
-    private static final int CURRENT_VERSION = 10;
+    private static final int CURRENT_VERSION = 11;
 
     private Handler mainHandler;
     
@@ -90,6 +90,13 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         // 使用默认的 TTS 引擎
         textToSpeech = new TextToSpeech(this, this);
         Log.d(TAG, "TTS initialization started");
+        
+        // 检查系统是否有可用的 TTS 引擎
+        List<TextToSpeech.EngineInfo> engines = textToSpeech.getEngines();
+        Log.d(TAG, "Available TTS engines: " + engines.size());
+        for (TextToSpeech.EngineInfo info : engines) {
+            Log.d(TAG, "  Engine: " + info.name);
+        }
     }
     
     @Override
@@ -98,8 +105,23 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         if (status == TextToSpeech.SUCCESS) {
             // 设置中文语音
             int result = textToSpeech.setLanguage(Locale.CHINESE);
-            Log.d(TAG, "setLanguage result: " + result);
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            Log.d(TAG, "setLanguage result: " + result + " (0=SUCCESS, -1=MISSING_DATA, -2=NOT_SUPPORTED)");
+            
+            if (result == TextToSpeech.LANG_MISSING_DATA) {
+                // 语言数据缺失，尝试下载
+                Log.w(TAG, "Chinese language data missing, attempting to download");
+                Intent installIntent = new Intent();
+                installIntent.setAction(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+                installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    startActivity(installIntent);
+                    runOnUiThread(() -> Toast.makeText(this, R.string.tts_downloading_data, Toast.LENGTH_LONG).show());
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to start TTS data install: " + e.getMessage());
+                }
+                // 仍然尝试使用默认语言
+                textToSpeech.setLanguage(Locale.getDefault());
+            } else if (result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 // 如果中文不可用，使用默认语言
                 Log.w(TAG, "Chinese language not supported, using default");
                 textToSpeech.setLanguage(Locale.getDefault());
@@ -145,9 +167,14 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             Log.e(TAG, "TTS initialization failed with status: " + status);
             isTtsInitialized = false;
             runOnUiThread(() -> {
-                Toast.makeText(this, R.string.tts_init_failed, Toast.LENGTH_LONG).show();
-                // 显示更详细的错误信息
-                showTtsInstallDialog();
+                // 检查是否有可用的 TTS 引擎
+                List<TextToSpeech.EngineInfo> engines = new TextToSpeech(this, null).getEngines();
+                if (engines.isEmpty()) {
+                    showTtsInstallDialog();
+                } else {
+                    // 有引擎但初始化失败，可能是引擎未正确配置
+                    showTtsConfigDialog();
+                }
             });
         }
     }
@@ -170,6 +197,25 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                     // 如果没有 Play Store，打开浏览器
                     Intent intent = new Intent(Intent.ACTION_VIEW,
                         Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.tts"));
+                    startActivity(intent);
+                }
+            })
+            .setNegativeButton(R.string.cancel, null)
+            .show();
+    }
+
+    private void showTtsConfigDialog() {
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.tts_init_failed)
+            .setMessage(R.string.tts_config_hint)
+            .setPositiveButton(R.string.go_tts_settings, (dialog, which) -> {
+                // 打开 TTS 设置页面
+                Intent intent = new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+                try {
+                    startActivity(intent);
+                } catch (Exception e) {
+                    // 如果失败，尝试打开辅助功能设置
+                    intent = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
                     startActivity(intent);
                 }
             })
