@@ -87,14 +87,18 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
     
     private void initTts() {
+        // 使用默认的 TTS 引擎
         textToSpeech = new TextToSpeech(this, this);
+        Log.d(TAG, "TTS initialization started");
     }
     
     @Override
     public void onInit(int status) {
+        Log.d(TAG, "onInit called with status: " + status);
         if (status == TextToSpeech.SUCCESS) {
             // 设置中文语音
             int result = textToSpeech.setLanguage(Locale.CHINESE);
+            Log.d(TAG, "setLanguage result: " + result);
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 // 如果中文不可用，使用默认语言
                 Log.w(TAG, "Chinese language not supported, using default");
@@ -134,10 +138,30 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             
             isTtsInitialized = true;
             Log.d(TAG, "TTS initialized successfully");
+            
+            // 初始化语音选择器（确保在 TTS 初始化后）
+            runOnUiThread(this::initVoiceSpinner);
         } else {
-            Log.e(TAG, "TTS initialization failed");
-            Toast.makeText(this, R.string.tts_init_failed, Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "TTS initialization failed with status: " + status);
+            isTtsInitialized = false;
+            runOnUiThread(() -> {
+                Toast.makeText(this, R.string.tts_init_failed, Toast.LENGTH_LONG).show();
+                // 显示更详细的错误信息
+                showTtsInstallDialog();
+            });
         }
+    }
+
+    private void showTtsInstallDialog() {
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.tts_init_failed)
+            .setMessage("设备可能未安装文字转语音引擎。请前往系统设置安装或启用TTS引擎（如 Google TTS）。")
+            .setPositiveButton("去设置", (dialog, which) -> {
+                Intent intent = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                startActivity(intent);
+            })
+            .setNegativeButton("取消", null)
+            .show();
     }
 
     private void initViews() {
@@ -161,7 +185,9 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     
     private void initVoiceSpinner() {
         // 获取可用的TTS引擎
-        voiceList = textToSpeech.getEngines();
+        List<TextToSpeech.EngineInfo> engines = textToSpeech.getEngines();
+        voiceList.clear();
+        voiceList.addAll(engines);
         List<String> voiceNames = new ArrayList<>();
         for (TextToSpeech.EngineInfo info : voiceList) {
             voiceNames.add(info.name);
@@ -245,10 +271,24 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         });
         
         spinnerVoice.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            private boolean firstSelection = true;
+            
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (isTtsInitialized && position < voiceList.size()) {
+                // 跳过第一次自动选择
+                if (firstSelection) {
+                    firstSelection = false;
+                    return;
+                }
+                
+                if (position < voiceList.size()) {
                     TextToSpeech.EngineInfo selectedEngine = voiceList.get(position);
+                    // 先关闭当前的 TTS
+                    if (textToSpeech != null) {
+                        textToSpeech.stop();
+                        textToSpeech.shutdown();
+                    }
+                    isTtsInitialized = false;
                     // 切换TTS引擎
                     textToSpeech = new TextToSpeech(MainActivity.this, MainActivity.this, selectedEngine.name);
                 }
