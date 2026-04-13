@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,16 +32,21 @@ jobs:
     - name: Build Release APK
       run: ./gradlew assembleRelease
 
+    - name: Rename APK
+      run: mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/txt-novel-reader.apk
+
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: app-release
-        path: app/build/outputs/apk/release/app-release.apk
+        path: app/build/outputs/apk/release/txt-novel-reader.apk
+        retention-days: 30
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: app/build/outputs/apk/release/app-release.apk
+        files: app/build/outputs/apk/release/txt-novel-reader.apk
+        generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
