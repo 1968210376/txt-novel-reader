@@ -52,7 +52,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final String GITHUB_REPO = "https://github.com/1968210376/txt-novel-reader";
     private static final String VERSION_URL = GITHUB_REPO + "/raw/main/version.json";
     private static final String APK_URL = GITHUB_REPO + "/releases/latest/download/app-release.apk";
-    private static final int CURRENT_VERSION = 7;
+    private static final int CURRENT_VERSION = 10;
 
     private Handler mainHandler;
     
@@ -155,12 +155,25 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private void showTtsInstallDialog() {
         new AlertDialog.Builder(this)
             .setTitle(R.string.tts_init_failed)
-            .setMessage("设备可能未安装文字转语音引擎。请前往系统设置安装或启用TTS引擎（如 Google TTS）。")
-            .setPositiveButton("去设置", (dialog, which) -> {
+            .setMessage(R.string.tts_install_hint)
+            .setPositiveButton(R.string.go_settings, (dialog, which) -> {
                 Intent intent = new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
                 startActivity(intent);
             })
-            .setNegativeButton("取消", null)
+            .setNeutralButton(R.string.install_google_tts, (dialog, which) -> {
+                // 尝试打开 Google Play 安装 Google TTS
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, 
+                        Uri.parse("market://details?id=com.google.android.tts"));
+                    startActivity(intent);
+                } catch (Exception e) {
+                    // 如果没有 Play Store，打开浏览器
+                    Intent intent = new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.tts"));
+                    startActivity(intent);
+                }
+            })
+            .setNegativeButton(R.string.cancel, null)
             .show();
     }
 
