@@ -13,6 +13,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
@@ -39,7 +41,6 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -51,83 +52,70 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private static final String GITHUB_REPO = "https://github.com/1968210376/txt-novel-reader";
     private static final String VERSION_URL = GITHUB_REPO + "/raw/main/version.json";
     private static final String APK_URL = GITHUB_REPO + "/releases/latest/download/app-release.apk";
-    private static final int CURRENT_VERSION = 3;
+    private static final int CURRENT_VERSION = 7;
 
-    private TextToSpeech tts;
-    private boolean ttsReady = false;
-    private boolean isPlaying = false;
+    private Handler mainHandler;
+    
     private List<String> chapters = new ArrayList<>();
     private int currentChapter = 0;
-    private String currentContent = "";
-    private float speechRate = 1.0f;
 
-    private TextView tvContent;
     private Button btnPlayPause, btnPrev, btnNext, btnUpdate;
-    private Spinner spinnerChapter;
+    private Spinner spinnerChapter, spinnerVoice;
     private SeekBar seekBarSpeed;
-    private TextView tvSpeed;
+    private TextView tvSpeed, tvContent;
+    
+    // TTS 相关
+    private TextToSpeech textToSpeech;
+    private boolean isTtsInitialized = false;
+    private boolean isPlaying = false;
+    private String currentContent = "";
+    private int currentReadPosition = 0;
+    private float speechRate = 1.0f;
+    private List<TextToSpeech.EngineInfo> voiceList = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        mainHandler = new Handler(Looper.getMainLooper());
+        
+        initTts();
         initViews();
-        initTTS();
         loadChapters();
         setupListeners();
     }
-
-    private void initViews() {
-        tvContent = findViewById(R.id.tvContent);
-        btnPlayPause = findViewById(R.id.btnPlayPause);
-        btnPrev = findViewById(R.id.btnPrev);
-        btnNext = findViewById(R.id.btnNext);
-        btnUpdate = findViewById(R.id.btnUpdate);
-        spinnerChapter = findViewById(R.id.spinnerChapter);
-        seekBarSpeed = findViewById(R.id.seekBarSpeed);
-        tvSpeed = findViewById(R.id.tvSpeed);
+    
+    private void initTts() {
+        textToSpeech = new TextToSpeech(this, this);
     }
-
-    private void initTTS() {
-        tts = new TextToSpeech(this, this);
-    }
-
+    
     @Override
     public void onInit(int status) {
-        Log.d(TAG, "TTS onInit status: " + status);
         if (status == TextToSpeech.SUCCESS) {
-            // 尝试设置中文语音
-            int result = tts.setLanguage(Locale.CHINESE);
-            Log.d(TAG, "setLanguage result: " + result);
-            
+            // 设置中文语音
+            int result = textToSpeech.setLanguage(Locale.CHINESE);
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                // 尝试使用中国Locale
-                result = tts.setLanguage(Locale.SIMPLIFIED_CHINESE);
-                Log.d(TAG, "setLanguage SIMPLIFIED_CHINESE result: " + result);
-            }
-            
-            // 列出可用的语音
-            Set<Locale> languages = tts.getAvailableLanguages();
-            Log.d(TAG, "Available languages: " + languages.size());
-            for (Locale locale : languages) {
-                if (locale.getLanguage().contains("zh") || locale.getLanguage().contains("cn")) {
-                    Log.d(TAG, "Chinese locale found: " + locale);
-                }
+                // 如果中文不可用，使用默认语言
+                Log.w(TAG, "Chinese language not supported, using default");
+                textToSpeech.setLanguage(Locale.getDefault());
             }
             
             // 设置语速
-            tts.setSpeechRate(speechRate);
+            textToSpeech.setSpeechRate(speechRate);
             
-            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            // 设置播放监听器
+            textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override
                 public void onStart(String utteranceId) {
-                    Log.d(TAG, "TTS onStart: " + utteranceId);
+                    runOnUiThread(() -> {
+                        isPlaying = true;
+                        btnPlayPause.setText(R.string.pause);
+                    });
                 }
                 
                 @Override
                 public void onDone(String utteranceId) {
-                    Log.d(TAG, "TTS onDone: " + utteranceId);
                     runOnUiThread(() -> {
                         isPlaying = false;
                         btnPlayPause.setText(R.string.play);
@@ -136,21 +124,56 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 
                 @Override
                 public void onError(String utteranceId) {
-                    Log.e(TAG, "TTS onError: " + utteranceId);
                     runOnUiThread(() -> {
                         isPlaying = false;
                         btnPlayPause.setText(R.string.play);
-                        Toast.makeText(MainActivity.this, "朗读出错", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MainActivity.this, R.string.tts_error, Toast.LENGTH_SHORT).show();
                     });
                 }
             });
             
-            ttsReady = true;
-            runOnUiThread(() -> Toast.makeText(this, "TTS已就绪", Toast.LENGTH_SHORT).show());
+            isTtsInitialized = true;
+            Log.d(TAG, "TTS initialized successfully");
         } else {
-            Log.e(TAG, "TTS init failed");
-            runOnUiThread(() -> Toast.makeText(this, "TTS初始化失败，请检查系统语音设置", Toast.LENGTH_LONG).show());
+            Log.e(TAG, "TTS initialization failed");
+            Toast.makeText(this, R.string.tts_init_failed, Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void initViews() {
+        btnPlayPause = findViewById(R.id.btnPlayPause);
+        btnPrev = findViewById(R.id.btnPrev);
+        btnNext = findViewById(R.id.btnNext);
+        btnUpdate = findViewById(R.id.btnUpdate);
+        spinnerChapter = findViewById(R.id.spinnerChapter);
+        spinnerVoice = findViewById(R.id.spinnerVoice);
+        seekBarSpeed = findViewById(R.id.seekBarSpeed);
+        tvSpeed = findViewById(R.id.tvSpeed);
+        tvContent = findViewById(R.id.tvContent);
+        
+        // 初始化语速显示
+        tvSpeed.setText(String.format("%.1fx", speechRate));
+        seekBarSpeed.setProgress((int) ((speechRate - 0.5f) / 0.1f));
+        
+        // 初始化语音选择
+        initVoiceSpinner();
+    }
+    
+    private void initVoiceSpinner() {
+        // 获取可用的TTS引擎
+        voiceList = textToSpeech.getEngines();
+        List<String> voiceNames = new ArrayList<>();
+        for (TextToSpeech.EngineInfo info : voiceList) {
+            voiceNames.add(info.name);
+        }
+        if (voiceNames.isEmpty()) {
+            voiceNames.add("默认");
+        }
+        
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+            android.R.layout.simple_spinner_item, voiceNames);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerVoice.setAdapter(adapter);
     }
 
     private void loadChapters() {
@@ -166,8 +189,10 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
                 spinnerChapter.setAdapter(adapter);
                 
+                // 加载第一章内容
                 if (!chapters.isEmpty()) {
-                    loadChapter(0);
+                    currentContent = loadChapterContent(0);
+                    updateContentDisplay();
                 }
             }
         } catch (IOException e) {
@@ -176,12 +201,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         }
     }
 
-    private void loadChapter(int index) {
-        if (index < 0 || index >= chapters.size()) return;
-        
-        currentChapter = index;
-        spinnerChapter.setSelection(index);
-        
+    private String loadChapterContent(int index) {
         try {
             InputStream is = getAssets().open("novels/" + chapters.get(index));
             BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"));
@@ -191,30 +211,19 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 sb.append(line).append("\n");
             }
             reader.close();
-            currentContent = sb.toString();
-            tvContent.setText(currentContent);
+            return sb.toString();
         } catch (IOException e) {
             e.printStackTrace();
-            Toast.makeText(this, "读取章节失败", Toast.LENGTH_SHORT).show();
+            return "";
         }
     }
 
     private void setupListeners() {
         btnPlayPause.setOnClickListener(v -> togglePlayPause());
         
-        btnPrev.setOnClickListener(v -> {
-            stopSpeaking();
-            if (currentChapter > 0) {
-                loadChapter(currentChapter - 1);
-            }
-        });
+        btnPrev.setOnClickListener(v -> prevChapter());
         
-        btnNext.setOnClickListener(v -> {
-            stopSpeaking();
-            if (currentChapter < chapters.size() - 1) {
-                loadChapter(currentChapter + 1);
-            }
-        });
+        btnNext.setOnClickListener(v -> nextChapter());
         
         btnUpdate.setOnClickListener(v -> checkForUpdate());
         
@@ -222,8 +231,26 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (position != currentChapter) {
+                    // 停止当前朗读
                     stopSpeaking();
-                    loadChapter(position);
+                    currentChapter = position;
+                    currentContent = loadChapterContent(position);
+                    currentReadPosition = 0;
+                    updateContentDisplay();
+                }
+            }
+            
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        
+        spinnerVoice.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (isTtsInitialized && position < voiceList.size()) {
+                    TextToSpeech.EngineInfo selectedEngine = voiceList.get(position);
+                    // 切换TTS引擎
+                    textToSpeech = new TextToSpeech(MainActivity.this, MainActivity.this, selectedEngine.name);
                 }
             }
             
@@ -236,8 +263,8 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 speechRate = 0.5f + progress * 0.1f;
                 tvSpeed.setText(String.format("%.1fx", speechRate));
-                if (tts != null) {
-                    tts.setSpeechRate(speechRate);
+                if (isTtsInitialized && textToSpeech != null) {
+                    textToSpeech.setSpeechRate(speechRate);
                 }
             }
             
@@ -248,45 +275,72 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             public void onStopTrackingTouch(SeekBar seekBar) {}
         });
     }
-
+    
     private void togglePlayPause() {
-        Log.d(TAG, "togglePlayPause: isPlaying=" + isPlaying + ", ttsReady=" + ttsReady);
+        if (!isTtsInitialized) {
+            Toast.makeText(this, R.string.tts_not_ready, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
         if (isPlaying) {
             stopSpeaking();
         } else {
             startSpeaking();
         }
     }
-
+    
     private void startSpeaking() {
-        if (!ttsReady) {
-            Toast.makeText(this, "TTS未就绪，请稍候重试", Toast.LENGTH_SHORT).show();
+        if (textToSpeech == null || currentContent.isEmpty()) {
             return;
         }
         
-        if (currentContent.isEmpty()) {
-            Toast.makeText(this, "没有内容可朗读", Toast.LENGTH_SHORT).show();
-            return;
+        // 从当前位置开始朗读
+        String textToRead = currentContent.substring(currentReadPosition);
+        if (textToRead.isEmpty()) {
+            currentReadPosition = 0;
+            textToRead = currentContent;
         }
         
-        tts.setSpeechRate(speechRate);
-        int result = tts.speak(currentContent, TextToSpeech.QUEUE_FLUSH, null, "tts1");
-        Log.d(TAG, "speak result: " + result);
-        
-        if (result == TextToSpeech.SUCCESS) {
-            isPlaying = true;
-            btnPlayPause.setText(R.string.pause);
-        } else {
-            Toast.makeText(this, "朗读启动失败，请检查系统TTS设置", Toast.LENGTH_LONG).show();
-        }
+        textToSpeech.speak(textToRead, TextToSpeech.QUEUE_FLUSH, null, "tts_utterance_id");
     }
-
+    
     private void stopSpeaking() {
-        if (tts != null) {
-            tts.stop();
+        if (textToSpeech != null) {
+            textToSpeech.stop();
         }
         isPlaying = false;
         btnPlayPause.setText(R.string.play);
+    }
+    
+    private void prevChapter() {
+        if (currentChapter > 0) {
+            stopSpeaking();
+            currentChapter--;
+            spinnerChapter.setSelection(currentChapter);
+            currentContent = loadChapterContent(currentChapter);
+            currentReadPosition = 0;
+            updateContentDisplay();
+        }
+    }
+    
+    private void nextChapter() {
+        if (currentChapter < chapters.size() - 1) {
+            stopSpeaking();
+            currentChapter++;
+            spinnerChapter.setSelection(currentChapter);
+            currentContent = loadChapterContent(currentChapter);
+            currentReadPosition = 0;
+            updateContentDisplay();
+        }
+    }
+    
+    private void updateContentDisplay() {
+        if (tvContent != null && currentContent != null) {
+            // 显示前500字符作为预览
+            String preview = currentContent.length() > 500 ? 
+                currentContent.substring(0, 500) + "..." : currentContent;
+            tvContent.setText(preview);
+        }
     }
 
     private void checkForUpdate() {
@@ -391,9 +445,11 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     @Override
     protected void onDestroy() {
-        if (tts != null) {
-            tts.stop();
-            tts.shutdown();
+        // 释放 TTS 资源
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+            textToSpeech = null;
         }
         super.onDestroy();
     }

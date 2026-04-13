@@ -43,6 +43,21 @@
         android:background="@color/bg_card"
         android:layout_marginBottom="16dp"/>
 
+    <!-- 语音选择 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="语音选择"
+        android:textColor="@color/text_secondary"
+        android:layout_marginBottom="8dp"/>
+
+    <Spinner
+        android:id="@+id/spinnerVoice"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="@color/bg_card"
+        android:layout_marginBottom="16dp"/>
+
     <!-- 内容显示 -->
     <ScrollView
         android:layout_width="match_parent"

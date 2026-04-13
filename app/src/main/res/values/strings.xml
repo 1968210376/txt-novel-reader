@@ -14,4 +14,8 @@
     <string name="update_success">下载完成，正在安装</string>
     <string name="update_error">更新失败: %s</string>
     <string name="new_version">发现新版本 %s，是否更新?</string>
+    <string name="tts_init_failed">语音引擎初始化失败</string>
+    <string name="tts_not_ready">语音引擎未就绪，请稍后再试</string>
+    <string name="tts_error">语音朗读出错</string>
+    <string name="voice_select">语音选择</string>
 </resources>
