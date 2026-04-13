@@ -15,11 +15,11 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -39,6 +39,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -46,12 +47,14 @@ import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity implements TextToSpeech.OnInitListener {
 
+    private static final String TAG = "TxtNovelReader";
     private static final String GITHUB_REPO = "https://github.com/1968210376/txt-novel-reader";
     private static final String VERSION_URL = GITHUB_REPO + "/raw/main/version.json";
     private static final String APK_URL = GITHUB_REPO + "/releases/latest/download/app-release.apk";
-    private static final int CURRENT_VERSION = 1;
+    private static final int CURRENT_VERSION = 3;
 
     private TextToSpeech tts;
+    private boolean ttsReady = false;
     private boolean isPlaying = false;
     private List<String> chapters = new ArrayList<>();
     private int currentChapter = 0;
@@ -92,18 +95,39 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     @Override
     public void onInit(int status) {
+        Log.d(TAG, "TTS onInit status: " + status);
         if (status == TextToSpeech.SUCCESS) {
+            // 尝试设置中文语音
             int result = tts.setLanguage(Locale.CHINESE);
+            Log.d(TAG, "setLanguage result: " + result);
+            
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Toast.makeText(this, "中文语音不可用", Toast.LENGTH_SHORT).show();
+                // 尝试使用中国Locale
+                result = tts.setLanguage(Locale.SIMPLIFIED_CHINESE);
+                Log.d(TAG, "setLanguage SIMPLIFIED_CHINESE result: " + result);
             }
+            
+            // 列出可用的语音
+            Set<Locale> languages = tts.getAvailableLanguages();
+            Log.d(TAG, "Available languages: " + languages.size());
+            for (Locale locale : languages) {
+                if (locale.getLanguage().contains("zh") || locale.getLanguage().contains("cn")) {
+                    Log.d(TAG, "Chinese locale found: " + locale);
+                }
+            }
+            
+            // 设置语速
+            tts.setSpeechRate(speechRate);
             
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override
-                public void onStart(String utteranceId) {}
+                public void onStart(String utteranceId) {
+                    Log.d(TAG, "TTS onStart: " + utteranceId);
+                }
                 
                 @Override
                 public void onDone(String utteranceId) {
+                    Log.d(TAG, "TTS onDone: " + utteranceId);
                     runOnUiThread(() -> {
                         isPlaying = false;
                         btnPlayPause.setText(R.string.play);
@@ -112,12 +136,20 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 
                 @Override
                 public void onError(String utteranceId) {
+                    Log.e(TAG, "TTS onError: " + utteranceId);
                     runOnUiThread(() -> {
                         isPlaying = false;
                         btnPlayPause.setText(R.string.play);
+                        Toast.makeText(MainActivity.this, "朗读出错", Toast.LENGTH_SHORT).show();
                     });
                 }
             });
+            
+            ttsReady = true;
+            runOnUiThread(() -> Toast.makeText(this, "TTS已就绪", Toast.LENGTH_SHORT).show());
+        } else {
+            Log.e(TAG, "TTS init failed");
+            runOnUiThread(() -> Toast.makeText(this, "TTS初始化失败，请检查系统语音设置", Toast.LENGTH_LONG).show());
         }
     }
 
@@ -218,6 +250,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private void togglePlayPause() {
+        Log.d(TAG, "togglePlayPause: isPlaying=" + isPlaying + ", ttsReady=" + ttsReady);
         if (isPlaying) {
             stopSpeaking();
         } else {
@@ -226,14 +259,25 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     }
 
     private void startSpeaking() {
-        if (currentContent.isEmpty()) return;
+        if (!ttsReady) {
+            Toast.makeText(this, "TTS未就绪，请稍候重试", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        if (currentContent.isEmpty()) {
+            Toast.makeText(this, "没有内容可朗读", Toast.LENGTH_SHORT).show();
+            return;
+        }
         
         tts.setSpeechRate(speechRate);
         int result = tts.speak(currentContent, TextToSpeech.QUEUE_FLUSH, null, "tts1");
+        Log.d(TAG, "speak result: " + result);
         
         if (result == TextToSpeech.SUCCESS) {
             isPlaying = true;
             btnPlayPause.setText(R.string.pause);
+        } else {
+            Toast.makeText(this, "朗读启动失败，请检查系统TTS设置", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -256,7 +300,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
                 try (Response response = client.newCall(request).execute()) {
                     if (response.isSuccessful()) {
                         String body = response.body().string();
-                        // 简单解析版本号
                         int latestVersion = parseVersion(body);
                         
                         runOnUiThread(() -> {
@@ -278,7 +321,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
 
     private int parseVersion(String json) {
         try {
-            // 简单解析 {"version": 2} 格式
             int start = json.indexOf(":") + 1;
             int end = json.indexOf("}");
             return Integer.parseInt(json.substring(start, end).trim());
@@ -319,7 +361,6 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         
         Toast.makeText(this, R.string.downloading, Toast.LENGTH_SHORT).show();
         
-        // 注册下载完成广播
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
