@@ -29,6 +29,15 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    - name: Create keystore
+      run: |
+        echo "STORE_FILE=release.keystore" > keystore.properties
+        echo "STORE_PASSWORD=android" >> keystore.properties
+        echo "KEY_ALIAS=release" >> keystore.properties
+        echo "KEY_PASSWORD=android" >> keystore.properties
+        
+        keytool -genkey -v -keystore release.keystore -alias release -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=TxtNovelReader, OU=Dev, O=Example, L=Beijing, ST=Beijing, C=CN"
+
     - name: Build Release APK
       run: ./gradlew assembleRelease
 
